@@ -25,8 +25,8 @@ fmt-check:
 
 # clippy with warnings as errors, and the docs with broken links as errors
 lint:
-    cargo clippy --all-targets --locked -- -D warnings
-    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked --quiet
+    cargo clippy --all-targets --all-features --locked -- -D warnings
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --locked --quiet
 
 # tests with line coverage, held to 100%
 cover:
@@ -35,6 +35,14 @@ cover:
 # what a log call costs, held to its ceiling
 bench:
     cargo bench --locked --bench cost
+
+# where a record's time goes, in zones of zonetrace, and what it allocates
+profile *args:
+    cargo run --release --locked --features zones --example profile -- {{args}}
+
+# records from many threads and from tokio, through each sink
+contend:
+    cargo run --release --locked --example contend 2>/dev/null
 
 # the oldest compiler the crate promises to build on (rust-version)
 msrv:

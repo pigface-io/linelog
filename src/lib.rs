@@ -35,7 +35,22 @@
 //! and never evaluates its fields. The answer for each call site is kept
 //! until the filter changes.
 //!
+//! In an async program, or wherever many threads log, wrap the sink in
+//! [`Background`] so no thread waits on a write, and call [`flush`] before
+//! the program exits.
+//!
 //! There are no spans and no implicit context: pass context as fields.
+
+#![forbid(unsafe_code)]
+
+/// Opens a zone of `zonetrace` until the end of the block, with the
+/// feature `zones`; nothing without it.
+macro_rules! zone {
+    ($z:ident) => {
+        #[cfg(feature = "zones")]
+        let _zone = zonetrace::enter(&crate::zones::$z);
+    };
+}
 
 mod error;
 mod filter;
@@ -44,18 +59,20 @@ mod level;
 mod logger;
 mod sink;
 mod value;
+#[cfg(feature = "zones")]
+mod zones;
 
 pub use error::Error;
 pub use filter::Filter;
 pub use format::Format;
 pub use level::{Level, ParseLevelError};
-pub use logger::{Builder, init, install_panic_hook, set_filter};
-pub use sink::{Capture, File, FnSink, Sink, Stderr, sink_fn};
+pub use logger::{Builder, flush, init, install_panic_hook, set_filter};
+pub use sink::{Background, Capture, File, FnSink, Sink, Stderr, sink_fn};
 pub use value::{DebugValue, DisplayValue, Kind, Value, debug, display};
 
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::logger::{Callsite, emit, key};
+    pub use crate::logger::{Callsite, emit};
 }
 
 /// Logs a record at a level given at run time; the level macros are
@@ -66,13 +83,13 @@ pub mod __private {
 #[macro_export]
 macro_rules! log {
     (target: $target:expr, $level:expr, $msg:expr $(; $($key:ident $(= $value:expr)?),* $(,)?)?) => {{
-        static CALLSITE: $crate::__private::Callsite = $crate::__private::Callsite::new();
+        static CALLSITE: $crate::__private::Callsite =
+            $crate::__private::Callsite::new($target, &[$($(stringify!($key)),*)?]);
         let level: $crate::Level = $level;
-        if CALLSITE.enabled(level, $target) {
-            $crate::__private::emit(level, $target, $msg, &[$($((
-                $crate::__private::key(stringify!($key)),
-                &$crate::__value!($key $(= $value)?) as &dyn $crate::Value,
-            )),*)?]);
+        if CALLSITE.enabled(level) {
+            $crate::__private::emit(level, &CALLSITE, $msg, &[$($(
+                &$crate::__value!($key $(= $value)?) as &dyn $crate::Value
+            ),*)?]);
         }
     }};
     ($level:expr, $msg:expr $(; $($rest:tt)*)?) => {
@@ -98,8 +115,8 @@ macro_rules! __value {
 #[macro_export]
 macro_rules! enabled {
     (target: $target:expr, $level:expr) => {{
-        static CALLSITE: $crate::__private::Callsite = $crate::__private::Callsite::new();
-        CALLSITE.enabled($level, $target)
+        static CALLSITE: $crate::__private::Callsite = $crate::__private::Callsite::new($target, &[]);
+        CALLSITE.enabled($level)
     }};
     ($level:expr) => {
         $crate::enabled!(target: module_path!(), $level)

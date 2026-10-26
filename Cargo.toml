@@ -13,7 +13,9 @@ categories = ["development-tools::debugging"]
 exclude = [".github/", "prek.toml", "justfile"]
 
 [lints.rust]
-unsafe_code = "forbid"
+# The library forbids unsafe code itself (src/lib.rs); only the profiling
+# example allows it, to count allocations.
+unsafe_code = "deny"
 missing_docs = "warn"
 
 [lints.clippy]
@@ -36,6 +38,25 @@ uninlined_format_args = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 dbg_macro = "deny"
+
+[dependencies]
+# Only with the feature `zones`: the default build has no dependencies.
+zonetrace = { version = "0.1.1", optional = true }
+
+[dev-dependencies]
+# Only for the example that logs from tokio's worker threads.
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros"] }
+
+[features]
+# Times a record's stages in zones of zonetrace, for profiling linelog itself.
+zones = ["dep:zonetrace"]
+
+[[example]]
+name = "profile"
+required-features = ["zones"]
+
+[[example]]
+name = "contend"
 
 [[bench]]
 name = "cost"

@@ -39,12 +39,22 @@ impl Logger {
         thread_local! {
             static BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
         }
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
+        zone!(LOG);
+        let now = {
+            zone!(CLOCK);
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+        };
         let write = |buf: &mut Vec<u8>| {
             buf.clear();
-            format::render(buf, self.format, self.style, now, rec);
+            {
+                zone!(RENDER);
+                format::render(buf, self.format, self.style, now, rec);
+            }
+            zone!(SINK);
+            #[cfg(feature = "zones")]
+            zonetrace::copied(buf.len() as u64);
             self.sink.write(buf);
         };
         // A value whose Display logs finds the buffer borrowed, and a
@@ -57,63 +67,67 @@ impl Logger {
     }
 }
 
-/// Whether one macro call site logs, remembered until the filter changes.
+/// One macro call site: its target and keys, and whether it logs,
+/// remembered until the filter changes. A `static` in each call.
 #[doc(hidden)]
 pub struct Callsite {
+    target: &'static str,
+    keys: &'static [&'static str],
     /// The epoch it last asked in, shifted left once, with the answer in
     /// the low bit.
     state: AtomicU32,
 }
 
 impl Callsite {
-    #[expect(clippy::new_without_default, reason = "only ever a static in a macro")]
-    pub const fn new() -> Self {
+    pub const fn new(target: &'static str, keys: &'static [&'static str]) -> Self {
         Self {
+            target,
+            keys,
             state: AtomicU32::new(0),
         }
     }
 
-    /// One load and a compare when `level` is above every target's level;
-    /// two loads and a compare when the answer is remembered.
+    /// One load and a compare, inline, when `level` is above every
+    /// target's level; otherwise a call that answers from the remembered
+    /// state, or asks the filter when it changed.
     #[inline]
-    pub fn enabled(&self, level: Level, target: &'static str) -> bool {
-        if level as u8 > MAX.load(Relaxed) {
-            return false;
-        }
+    pub fn enabled(&self, level: Level) -> bool {
+        level as u8 <= MAX.load(Relaxed) && self.remembered(level)
+    }
+
+    #[inline(never)]
+    fn remembered(&self, level: Level) -> bool {
         let state = self.state.load(Relaxed);
         let epoch = EPOCH.load(Relaxed);
         if state >> 1 == epoch {
             return state & 1 == 1;
         }
-        self.ask(level, target, epoch)
+        self.ask(level, epoch)
     }
 
     #[cold]
-    fn ask(&self, level: Level, target: &str, epoch: u32) -> bool {
-        let on = LOGGER.get().is_some_and(|l| l.enabled(level, target));
+    fn ask(&self, level: Level, epoch: u32) -> bool {
+        let on = LOGGER.get().is_some_and(|l| l.enabled(level, self.target));
         self.state.store(epoch << 1 | u32::from(on), Relaxed);
         on
     }
 }
 
 /// Writes one record through the installed logger. The macros call it
-/// once their callsite says the record passes.
+/// once their callsite says the record passes; out of line, so a call
+/// site stays small.
 #[doc(hidden)]
-pub fn emit(level: Level, target: &str, msg: &str, fields: &[(&str, &dyn Value)]) {
+#[inline(never)]
+pub fn emit(level: Level, site: &Callsite, msg: &str, values: &[&dyn Value]) {
     if let Some(logger) = LOGGER.get() {
         logger.log(&Record {
             level,
-            target,
+            target: site.target,
             msg,
-            fields,
+            keys: site.keys,
+            values,
         });
     }
-}
-
-/// A field's key as written: `r#type` becomes `type`.
-#[doc(hidden)]
-pub fn key(name: &'static str) -> &'static str {
-    name.strip_prefix("r#").unwrap_or(name)
 }
 
 /// Replaces the installed logger's filter.
@@ -133,9 +147,19 @@ pub fn set_filter(filter: Filter) -> Result<(), Error> {
     Ok(())
 }
 
+/// Returns once every record logged before the call has reached its
+/// destination: call it before the program exits when the sink is a
+/// [`Background`](crate::Background). Does nothing before
+/// [`Builder::install`].
+pub fn flush() {
+    if let Some(logger) = LOGGER.get() {
+        logger.sink.flush();
+    }
+}
+
 /// Logs a panic as one `ERROR` record, target `panic`, with fields `code`
 /// (`internal.panic`) and `location`, then runs the hook that was there
-/// before, which prints it as usual.
+/// before, which prints it as usual. The record is flushed first.
 pub fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -149,6 +173,7 @@ pub fn install_panic_hook() {
             .location()
             .map(|l| format!("{}:{}", l.file(), l.line()));
         crate::error!(target: "panic", msg; code = "internal.panic", location);
+        flush();
         previous(info);
     }));
 }
@@ -415,12 +440,12 @@ mod tests {
             .color(false)
             .build(&env(&[]))
             .unwrap();
-        let fields: [(&str, &dyn Value); 2] = [("a", &1u8), ("b", &"two words")];
         l.log(&Record {
             level: Level::Info,
             target: "t",
             msg: "m",
-            fields: &fields,
+            keys: &["a", "b"],
+            values: &[&1u8, &"two words"],
         });
         assert_eq!(tty.1.load(Relaxed), 1);
         assert!(
@@ -439,7 +464,8 @@ mod tests {
                     level: Level::Info,
                     target: "inner",
                     msg: "nested",
-                    fields: &[],
+                    keys: &[],
+                    values: &[],
                 });
                 f.write_str("outer")
             }
@@ -447,12 +473,12 @@ mod tests {
         let c = Capture::new();
         let l = init().sink(c.clone()).build(&env(&[])).unwrap();
         let loud = Loud(&l);
-        let fields: [(&str, &dyn Value); 1] = [("v", &crate::display(&loud))];
         l.log(&Record {
             level: Level::Info,
             target: "outer",
             msg: "m",
-            fields: &fields,
+            keys: &["v"],
+            values: &[&crate::display(&loud)],
         });
         let lines = c.lines();
         assert!(lines[0].ends_with("inner nested"), "{lines:?}");
@@ -461,12 +487,6 @@ mod tests {
 
     #[test]
     fn a_new_callsite_has_never_asked() {
-        assert_eq!(Callsite::new().state.load(Relaxed), 0);
-    }
-
-    #[test]
-    fn raw_keys_lose_their_prefix() {
-        assert_eq!(key("r#type"), "type");
-        assert_eq!(key("rows"), "rows");
+        assert_eq!(Callsite::new("t", &[]).state.load(Relaxed), 0);
     }
 }

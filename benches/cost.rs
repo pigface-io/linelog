@@ -41,11 +41,11 @@ fn time(calls: u32, mut f: impl FnMut()) -> f64 {
 #[allow(clippy::expect_used, reason = "a bench fails loudly")]
 fn main() {
     // About twice the cost, to catch a logger gone wrong, not a noisy
-    // machine. A turned-away call is one load and a compare, about 0.4 ns
+    // machine. A turned-away call is one load and a compare, about 0.35 ns
     // on Apple silicon; a written one reads the clock and formats about 150
-    // bytes, about 220 ns there.
+    // bytes, about 140 ns there.
     let apple = cfg!(all(target_arch = "aarch64", target_os = "macos"));
-    let (off_ceiling, on_ceiling) = if apple { (1.0, 500.0) } else { (5.0, 2000.0) };
+    let (off_ceiling, on_ceiling) = if apple { (1.0, 300.0) } else { (5.0, 1500.0) };
 
     linelog::init()
         .level(Level::Info)

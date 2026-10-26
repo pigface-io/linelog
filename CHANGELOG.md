@@ -14,3 +14,6 @@ follow [Semantic Versioning](https://semver.org/).
   names; a call site remembers its answer until the filter changes.
 - Sinks for standard error, an appended file, a closure and an in-memory
   capture; a panic hook that logs panics as records.
+- `Background`, a sink written from a thread of its own through eight
+  per-thread buffers, in the order records were logged; `flush()`.
+- Feature `zones`: a record's stages timed in zones of zonetrace.
