@@ -1,0 +1,45 @@
+[package]
+name = "linelog"
+description = "Structured logging, one line a record: logfmt-style text for people, JSON Lines for machines. No dependencies; a disabled call costs one load and a compare."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/pigface-io/linelog"
+documentation = "https://docs.rs/linelog"
+readme = "README.md"
+keywords = ["logging", "log", "structured", "json", "logfmt"]
+categories = ["development-tools::debugging"]
+exclude = [".github/", "prek.toml", "justfile"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+needless_pass_by_value = "deny"
+semicolon_if_nothing_returned = "deny"
+redundant_closure_for_method_calls = "deny"
+inefficient_to_string = "deny"
+implicit_clone = "deny"
+manual_let_else = "deny"
+unnested_or_patterns = "deny"
+map_unwrap_or = "deny"
+large_types_passed_by_value = "deny"
+ref_option = "deny"
+format_push_string = "deny"
+unreadable_literal = "deny"
+cloned_instead_of_copied = "deny"
+explicit_iter_loop = "deny"
+uninlined_format_args = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+
+[[bench]]
+name = "cost"
+harness = false
+
+[profile.release]
+debug = "line-tables-only"
