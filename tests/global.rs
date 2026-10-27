@@ -86,7 +86,18 @@ fn the_installed_logger() {
     let _ = std::panic::catch_unwind(|| std::panic::panic_any(7_u8));
     let got = lines.lines();
     assert_eq!(got.len(), 3, "{got:?}");
-    assert!(got[0].contains(" ERROR panic boom 1 code=internal.panic location=tests/global.rs:"));
+    // Windows names the file with `\`, which logfmt quotes and escapes.
+    let location = if cfg!(windows) {
+        r#"location="tests\\global.rs:"#
+    } else {
+        "location=tests/global.rs:"
+    };
+    assert!(
+        got[0].contains(&format!(
+            " ERROR panic boom 1 code=internal.panic {location}"
+        )),
+        "{got:?}"
+    );
     assert!(got[1].contains(" ERROR panic static code="));
     assert!(got[2].contains(" ERROR panic panic code="));
 
