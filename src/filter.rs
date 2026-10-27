@@ -11,8 +11,8 @@ const OFF: u8 = 0;
 /// target prefix with its own level. A record passes when its level is at
 /// or below the level of the longest directive that matches its target, or
 /// the default when none does. A directive matches a target equal to it or
-/// one that continues with `::` or `.`: `utilake_net` matches
-/// `utilake_net::fetch` and `utilake_net.retry`, not `utilake_netx`.
+/// one that continues with `::` or `.`: `phasor_net` matches
+/// `phasor_net::fetch` and `phasor_net.retry`, not `phasor_netx`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Filter {
     default: u8,
@@ -45,7 +45,7 @@ impl Filter {
     }
 
     /// Reads directives separated by commas, as in `RUST_LOG`:
-    /// `info,utilake_net=debug,utilake_pipeline::run=trace`.
+    /// `info,phasor_net=debug,phasor_pipeline::run=trace`.
     ///
     /// A bare level sets the default and `target=level` sets a directive;
     /// `off` is a level that passes nothing. Unlike `RUST_LOG`, a bare word
