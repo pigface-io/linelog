@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-29
+
 ### Added
 
 - Records with a level, a target, a message and typed fields, written as
@@ -17,3 +19,6 @@ follow [Semantic Versioning](https://semver.org/).
 - `Background`, a sink written from a thread of its own through eight
   per-thread buffers, in the order records were logged; `flush()`.
 - Feature `zones`: a record's stages timed in zones of zonetrace.
+
+[Unreleased]: https://github.com/pigface-io/linelog/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/pigface-io/linelog/releases/tag/v0.1.0
